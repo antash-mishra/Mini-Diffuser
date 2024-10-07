@@ -1,11 +1,11 @@
 import torch
 import numpy as np
 
-class DDPMScheduler:
+class DDPMSampler:
     def __init__(self, generator:torch.Generator, num_training_steps=1000, beta_start:float = 0.00085, beta_end:float = 0.0120):
 
         # Scaled linear scheduler
-        self.betas = torch.linspace(beta_start ** 0.05, beta_end ** 0.5, num_training_steps, dtype=torch.float32) ** 2
+        self.betas = torch.linspace(beta_start ** 0.5, beta_end ** 0.5, num_training_steps, dtype=torch.float32) ** 2
         self.alphas = 1.0 - self.betas
         self.alpha_cumprod = torch.cumprod(self.alphas, 0) # [alpha0, alpha0 * alpha1, alpha0 * alpha1 * alpha2 ...]
 
@@ -18,19 +18,19 @@ class DDPMScheduler:
 
     def set_inference_steps(self, num_inference_steps=50):
         self.num_inference_steps = num_inference_steps
-        step_ratio = self.num_training_steps // num_inference_steps
+        step_ratio = self.num_training_steps // self.num_inference_steps
 
         timesteps  = (np.arange(0, num_inference_steps) * step_ratio).round()[::-1].copy().astype(np.int64)
         self.timesteps = torch.from_numpy(timesteps)
 
     def _get_prev_timestep(self, timestep: int) -> int:
-        prev_t = timestep - (self.num_training_steps // self.num_inference_steps)
+        prev_t = timestep - self.num_training_steps // self.num_inference_steps
         return prev_t
 
-    def _get_variance(self, timestep:int):
+    def _get_variance(self, timestep:int) -> torch.Tensor:
         prev_t = self._get_prev_timestep(timestep=timestep)
         alpha_prod_t = self.alpha_cumprod[timestep]
-        alpha_prod_t_prev = self.alpha_cumprod[prev_t]
+        alpha_prod_t_prev = self.alpha_cumprod[prev_t] if prev_t >= 0 else self.one
         current_beta_t = 1 - alpha_prod_t / alpha_prod_t_prev
 
         # Computing variance referencing the formula 7 of DDPM Paper
@@ -43,10 +43,12 @@ class DDPMScheduler:
     def step(self, timestep:int, latents:torch.Tensor, model_output: torch.Tensor):
 
         t = timestep
-        prev_t = self._get_prev_timestep(timestep)
+        # print("current_t: ", t)
+        prev_t = self._get_prev_timestep(t)
+        # print("Prev_t: ", prev_t)
 
-        alpha_prod_t = self.alpha_cumprod[timestep]
-        alpha_prod_t_prev = self.alpha_cumprod[prev_t]
+        alpha_prod_t = self.alpha_cumprod[t]
+        alpha_prod_t_prev = self.alpha_cumprod[prev_t] if prev_t >= 0 else self.one
 
         beta_prod_t = 1 - alpha_prod_t
         beta_prod_t_prev = 1 - alpha_prod_t_prev
@@ -55,11 +57,14 @@ class DDPMScheduler:
         current_beta_t = 1 - current_alpha_t
 
         # Computing predicted original sample using formula 15 of DDPM Paper
-        pred_original_sample = (latents - beta_prod_t ** 0.5 * model_output) / alpha_prod_t ** 0.5
+        pred_original_sample = (latents - beta_prod_t ** (0.5) * model_output) / alpha_prod_t ** (0.5)
 
+        #print("Pred Original Sample: ", pred_original_sample)
+ 
         # Calculate cofficient for original pred_original_sample and current sample x_t
-        pred_original_sample_coeff = (alpha_prod_t_prev ** 0.5 * current_beta_t) / beta_prod_t
-        current_sample_coeff = current_alpha_t ** 0.5 * beta_prod_t_prev / beta_prod_t
+        pred_original_sample_coeff = (alpha_prod_t_prev ** (0.5) * current_beta_t) / beta_prod_t
+        current_sample_coeff = current_alpha_t ** (0.5) * beta_prod_t_prev / beta_prod_t
+        #print("current_sample coeff: ", current_sample_coeff)
 
         # Compute predicted previous sample mean
         pred_prev_sample = pred_original_sample_coeff * pred_original_sample + current_sample_coeff * latents
@@ -70,17 +75,18 @@ class DDPMScheduler:
             noise = torch.randn(model_output.shape, generator=self.generator, device=device, dtype=model_output.dtype)
             
             variance = (self._get_variance(t) ** 0.5) * noise
-        
+            #print("Variance1: ", variance)
         # Z= N(0,1) -> N(mean, variance)=X
         # X = mean + stddev * Z
         # pred_prev_sample was the mean
         # and variance = stddev * z(noise)
         pred_prev_sample = pred_prev_sample + variance
+        # print("Pred Prev Sample2: " , pred_prev_sample)
         return pred_prev_sample
     
 
     def set_strength(self, strength=1):
-        start_step = self.num_inference_steps - (self.num_inference_steps * strength)
+        start_step = self.num_inference_steps - int(self.num_inference_steps * strength)
         self.timesteps = self.timesteps[start_step:]
         self.start_step = start_step
     
@@ -106,8 +112,8 @@ class DDPMScheduler:
         # Z= N(0,1) -> N(mean, variance)=X
         # X = mean + stddev * Z
         # as noise is added by markov vhain of gaussian distribution method
-        noise = torch.randn(original_samples.shape, generator=self.generator, dtype=original_samples.dtype)
-        noisy_sample = (sqrt_alpha_prod * original_samples) + (sqrt_one_minus_alpha_prod) * noise
+        noise = torch.randn(original_samples.shape, generator=self.generator,device=original_samples.device, dtype=original_samples.dtype)
+        noisy_sample = sqrt_alpha_prod * original_samples + sqrt_one_minus_alpha_prod * noise
         return noisy_sample 
 
 

@@ -4,14 +4,14 @@ from torch.nn import functional as F
 import math
 
 class SelfAttention(nn.Module):
-    def __init__(self, n_heads: int, d_embeds: int, in_proj_bias: bool = True, out_proj_bias: bool = True):
+    def __init__(self, n_heads, d_embed, in_proj_bias: bool = True, out_proj_bias: bool = True):
 
         super().__init__()
 
-        self.in_proj = nn.Linear(d_embeds, 3*d_embeds, bias=in_proj_bias)
-        self.out_proj = nn.Linear(d_embeds, d_embeds, bias=out_proj_bias)
+        self.in_proj = nn.Linear(d_embed, 3*d_embed, bias=in_proj_bias)
+        self.out_proj = nn.Linear(d_embed, d_embed, bias=out_proj_bias)
         self.n_heads = n_heads
-        self.d_heads = d_embeds // n_heads
+        self.d_head = d_embed // n_heads
 
     
     def forward(self, x: torch.Tensor, casual_mask = True):
@@ -19,9 +19,9 @@ class SelfAttention(nn.Module):
         # x: (Batch_size, Seq_len,  Dim)
         input_shape = x.shape
 
-        batch_size, seq_len, d_embeds = input_shape
+        batch_size, seq_len, d_embed = input_shape
 
-        interim_shape = (batch_size, seq_len, self.n_heads, self.d_heads)
+        interim_shape = (batch_size, seq_len, self.n_heads, self.d_head)
 
         # (Batch_size, Seq_len, Dim) => (Batch_size, Seq_len, 3*Dim) => 3 tensors of shape (Batch_size, Seq_len, Dim)
         q, k, v = self.in_proj(x).chunk(3, dim=-1)
@@ -40,7 +40,7 @@ class SelfAttention(nn.Module):
             weight.masked_fill_(mask, -torch.inf)
 
 
-        weight /= math.sqrt(self.d_heads)
+        weight /= math.sqrt(self.d_head)
 
         weight = F.softmax(weight, dim=-1)
 
@@ -57,15 +57,15 @@ class SelfAttention(nn.Module):
         return output
 
 class CrossAttention(nn.Module):
-    def __init__(self, n_heads: int, d_embeds: int, d_cross:int, in_proj_bias: bool = True, out_proj_bias: bool = True):    
+    def __init__(self, n_heads: int, d_embed: int, d_cross:int, in_proj_bias: bool = True, out_proj_bias: bool = True):    
         super().__init__()
 
-        self.q_proj = nn.Linear(d_embeds, d_embeds, bias=in_proj_bias)
-        self.k_proj = nn.Linear(d_cross, d_embeds, bias=in_proj_bias)
-        self.v_proj = nn.Linear(d_cross, d_embeds, bias=in_proj_bias)
-        self.out_proj = nn.Linear(d_embeds, d_embeds, bias=out_proj_bias)
+        self.q_proj = nn.Linear(d_embed, d_embed, bias=in_proj_bias)
+        self.k_proj = nn.Linear(d_cross, d_embed, bias=in_proj_bias)
+        self.v_proj = nn.Linear(d_cross, d_embed, bias=in_proj_bias)
+        self.out_proj = nn.Linear(d_embed, d_embed, bias=out_proj_bias)
         self.n_heads = n_heads
-        self.d_head = d_embeds // n_heads
+        self.d_head = d_embed // n_heads
 
     
     def forward(self, x, y):
@@ -73,7 +73,7 @@ class CrossAttention(nn.Module):
         # y: (context): (Batch_Size, seq_len_KV, dim_KV)
 
         input_shape = x.shape
-        batch_size, seq_len, d_embeds = input_shape
+        batch_size, seq_len, d_embed = input_shape
 
         interim_shape = (batch_size, -1, self.n_heads, self.d_head)
 

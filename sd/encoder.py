@@ -67,7 +67,7 @@ class VAE_Encoder(nn.Sequential):
         )
 
         
-    def forward(self, x: torch.Tensor, noise: torch.Tensor) -> torch.Tensor:
+    def forward(self, x, noise):
         # x: (Batch_size, Channel, Height, Width)
         # noise: (Batch_size, out_channels, Height/8, Width/8)
 
@@ -75,7 +75,7 @@ class VAE_Encoder(nn.Sequential):
             if getattr(module, 'stride', None) == (2, 2):
 
                 # (Padding_Left, padding_Right, padding_top, padding_bottom)
-                x = F.pad(0, 1, 0, 1)
+                x = F.pad(x, (0, 1, 0, 1))
 
             x = module(x)
         
@@ -86,7 +86,7 @@ class VAE_Encoder(nn.Sequential):
         mean, log_variance = torch.chunk(x,2, dim=1)
 
         # (Batch_size, 4, Height/8, Width/8) => (Batch_size, 4, Height/8, Width/8)
-        log_variance = torch.clamp(log_variance, -30.0, 20.0)   
+        log_variance = torch.clamp(log_variance, -30, 20)   
 
         # (Batch_size, 4, Height/8, Width/8) => (Batch_size, 4, Height/8, Width/8)
         variance = log_variance.exp()
