@@ -10,7 +10,7 @@ class VAE_AttentionBlock(nn.Module):
         self.groupnorm = nn.GroupNorm(32, channels)
         self.attention = SelfAttention(1, channels)
     
-    def forward(self, x: torch.Tensor) -> torch.Tensor:
+    def forward(self, x):
 
         # x: (Batch_size, Features, Height, Width)
         residue = x
@@ -38,7 +38,7 @@ class VAE_AttentionBlock(nn.Module):
 
 
 class VAE_ResidualBlock(nn.Module):
-    def __init__(self, in_channels: int, out_channels: int):
+    def __init__(self, in_channels, out_channels):
 
         """
         Args:
@@ -90,76 +90,99 @@ class VAE_ResidualBlock(nn.Module):
 
         x = self.conv_2(x)
 
-        x = x + self.residual_layer(residue)
-
-        return x
+        return x + self.residual_layer(residue)
     
 
 class VAE_Decoder(nn.Sequential):
     def __init__(self):
         super().__init__(
-            nn.Conv2d(4,4, kernel_size = 1, padding = 0),
-            nn.Conv2d(4, 512, kernel_size = 5, padding = 1),
+            # (Batch_Size, 4, Height / 8, Width / 8) -> (Batch_Size, 4, Height / 8, Width / 8)
+            nn.Conv2d(4, 4, kernel_size=1, padding=0),
 
-            VAE_ResidualBlock(512, 512),
-
-            VAE_AttentionBlock(512),
-
-            VAE_ResidualBlock(512, 512),
-
-            VAE_ResidualBlock(512, 512),
-
-            VAE_ResidualBlock(512, 512),
-
-            # (Batch_size, 512, Height/8, Width/8) => (Batch_size, 512, Height/8, Width/8)
-            VAE_ResidualBlock(512, 512),
-
-            # (Batch_size, 512, Height/8, Width/8) => (Batch_size, 512, Height/4, Width/4)
-            nn.Upsample(scale_factor=2),
-
-            nn.Conv2d(512, 512,kernel_size = 3, padding = 1),
-
-            VAE_ResidualBlock(512, 512),
-
-            VAE_ResidualBlock(512, 512),
-
-            VAE_ResidualBlock(512, 512),
-
-            # (Batch_size, 512, Height/4, Width/4) => (Batch_size, 512, Height/2, Width/2)
-            nn.Upsample(scale_factor=2),
-
-            nn.Conv2d(512, 512,kernel_size = 3, padding = 1),
-
-            VAE_ResidualBlock(512, 256),
-
-            VAE_ResidualBlock(256, 256),
-
-            VAE_ResidualBlock(256, 256),
-
-            # (Batch_size, 512, Height/2, Width/2) => (Batch_size, 512, Height, Width)
-            nn.Upsample(scale_factor=2),
-
-            nn.Conv2d(256, 256, kernel_size=3, padding=1),
-
-            VAE_ResidualBlock(256, 128),
-
-            VAE_ResidualBlock(128, 128),
-
-            VAE_ResidualBlock(128, 128),
+            # (Batch_Size, 4, Height / 8, Width / 8) -> (Batch_Size, 512, Height / 8, Width / 8)
+            nn.Conv2d(4, 512, kernel_size=3, padding=1),
             
-            nn.GroupNorm(32, 128),
-
-            nn.SiLU(),
-
-           # (Batch_size, 128, Height, Width) => (Batch_size, 3, Height, Width)
-            nn.Conv2d(128, 3, kernel_size=3, padding=1),
-
+            # (Batch_Size, 512, Height / 8, Width / 8) -> (Batch_Size, 512, Height / 8, Width / 8)
+            VAE_ResidualBlock(512, 512), 
+            
+            # (Batch_Size, 512, Height / 8, Width / 8) -> (Batch_Size, 512, Height / 8, Width / 8)
+            VAE_AttentionBlock(512), 
+            
+            # (Batch_Size, 512, Height / 8, Width / 8) -> (Batch_Size, 512, Height / 8, Width / 8)
+            VAE_ResidualBlock(512, 512), 
+            
+            # (Batch_Size, 512, Height / 8, Width / 8) -> (Batch_Size, 512, Height / 8, Width / 8)
+            VAE_ResidualBlock(512, 512), 
+            
+            # (Batch_Size, 512, Height / 8, Width / 8) -> (Batch_Size, 512, Height / 8, Width / 8)
+            VAE_ResidualBlock(512, 512), 
+            
+            # (Batch_Size, 512, Height / 8, Width / 8) -> (Batch_Size, 512, Height / 8, Width / 8)
+            VAE_ResidualBlock(512, 512), 
+            
+            # Repeats the rows and columns of the data by scale_factor (like when you resize an image by doubling its size).
+            # (Batch_Size, 512, Height / 8, Width / 8) -> (Batch_Size, 512, Height / 4, Width / 4)
+            nn.Upsample(scale_factor=2),
+            
+            # (Batch_Size, 512, Height / 4, Width / 4) -> (Batch_Size, 512, Height / 4, Width / 4)
+            nn.Conv2d(512, 512, kernel_size=3, padding=1), 
+            
+            # (Batch_Size, 512, Height / 4, Width / 4) -> (Batch_Size, 512, Height / 4, Width / 4)
+            VAE_ResidualBlock(512, 512), 
+            
+            # (Batch_Size, 512, Height / 4, Width / 4) -> (Batch_Size, 512, Height / 4, Width / 4)
+            VAE_ResidualBlock(512, 512), 
+            
+            # (Batch_Size, 512, Height / 4, Width / 4) -> (Batch_Size, 512, Height / 4, Width / 4)
+            VAE_ResidualBlock(512, 512), 
+            
+            # (Batch_Size, 512, Height / 4, Width / 4) -> (Batch_Size, 512, Height / 2, Width / 2)
+            nn.Upsample(scale_factor=2), 
+            
+            # (Batch_Size, 512, Height / 2, Width / 2) -> (Batch_Size, 512, Height / 2, Width / 2)
+            nn.Conv2d(512, 512, kernel_size=3, padding=1), 
+            
+            # (Batch_Size, 512, Height / 2, Width / 2) -> (Batch_Size, 256, Height / 2, Width / 2)
+            VAE_ResidualBlock(512, 256), 
+            
+            # (Batch_Size, 256, Height / 2, Width / 2) -> (Batch_Size, 256, Height / 2, Width / 2)
+            VAE_ResidualBlock(256, 256), 
+            
+            # (Batch_Size, 256, Height / 2, Width / 2) -> (Batch_Size, 256, Height / 2, Width / 2)
+            VAE_ResidualBlock(256, 256), 
+            
+            # (Batch_Size, 256, Height / 2, Width / 2) -> (Batch_Size, 256, Height, Width)
+            nn.Upsample(scale_factor=2), 
+            
+            # (Batch_Size, 256, Height, Width) -> (Batch_Size, 256, Height, Width)
+            nn.Conv2d(256, 256, kernel_size=3, padding=1), 
+            
+            # (Batch_Size, 256, Height, Width) -> (Batch_Size, 128, Height, Width)
+            VAE_ResidualBlock(256, 128), 
+            
+            # (Batch_Size, 128, Height, Width) -> (Batch_Size, 128, Height, Width)
+            VAE_ResidualBlock(128, 128), 
+            
+            # (Batch_Size, 128, Height, Width) -> (Batch_Size, 128, Height, Width)
+            VAE_ResidualBlock(128, 128), 
+            
+            # (Batch_Size, 128, Height, Width) -> (Batch_Size, 128, Height, Width)
+            nn.GroupNorm(32, 128), 
+            
+            # (Batch_Size, 128, Height, Width) -> (Batch_Size, 128, Height, Width)
+            nn.SiLU(), 
+            
+            # (Batch_Size, 128, Height, Width) -> (Batch_Size, 3, Height, Width)
+            nn.Conv2d(128, 3, kernel_size=3, padding=1), 
         )
 
+
     
-    def forward(self, x: torch.Tensor) -> torch.Tensor:
+    def forward(self, x):
 
         # x: (Batch_size, Features, Height/4, Width/4)
+
+        x /= 0.1815
 
         for module in self:
             x = module(x)

@@ -3,12 +3,12 @@ from torch import nn
 from torch.nn import functional as F
 from attention import SelfAttention
 
-class CLIPEmbeddings(nn.Module):
-    def __init__(self, n_vocab:int, n_embds:int, n_tokens: int):
+class CLIPEmbedding(nn.Module):
+    def __init__(self, n_vocab:int, n_embd:int, n_token: int):
         super().__init__()
 
-        self.token_embedding = nn.Embedding(n_vocab, n_embds)
-        self.position_embedding = nn.Parameter(torch.zeros(n_tokens, n_embds))
+        self.token_embedding = nn.Embedding(n_vocab, n_embd)
+        self.position_embedding = nn.Parameter(torch.zeros((n_token, n_embd)))
 
     def forward(self, tokens):
         # (Batch_Size, seq_len) => (Batch_Size, seq_len, Dim)
@@ -20,16 +20,18 @@ class CLIPEmbeddings(nn.Module):
     
 
 class CLIPLayer(nn.Module):
-    def __init__(self, n_heads: int, n_embds: int):
+    def __init__(self, n_head: int, n_embd: int):
         super().__init__()
 
-        self.layernorm_1 = nn.LayerNorm(n_embds)
-        self.attention = SelfAttention(n_heads, n_embds)
-        self.layernorm_2 = nn.LayerNorm(n_embds)
-        self.linear_1 = nn.Linear(n_embds, 4 * n_embds)
-        self.linear_2 = nn.Linear(4 * n_embds, n_embds)
+        self.layernorm_1 = nn.LayerNorm(n_embd)
+        self.attention = SelfAttention(n_head, n_embd)
+        self.layernorm_2 = nn.LayerNorm(n_embd)
+        self.linear_1 = nn.Linear(n_embd, 4 * n_embd)
+        self.linear_2 = nn.Linear(4 * n_embd, n_embd)
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
+
+        residue = x
         
         # (Batch_)Size, seq_len, Dim)
         x = self.layernorm_1(x)
@@ -52,27 +54,29 @@ class CLIPLayer(nn.Module):
 
 class CLIP(nn.Module):
     def __init__(self):
-        self.embedding = CLIPEmbeddings(49408, 768, 77)
-        self.layers = nn.Module([
+        super().__init__()
+        self.embedding = CLIPEmbedding(49408, 768, 77)
+        self.layers = nn.ModuleList([
             CLIPLayer(12, 768) for i in range(12)
         ])
 
-        self.layerNorm = nn.LayerNorm(768)
+        self.layernorm = nn.LayerNorm(768)
 
     def forward(self, tokens: torch.LongTensor) -> torch.FloatTensor:
 
         tokens = tokens.type(torch.long)
-
-        # (Batch_Size, seq_len) => (Batch_Size, seq_len, Dim)
+        
+        # (Batch_Size, Seq_Len) -> (Batch_Size, Seq_Len, Dim)
         state = self.embedding(tokens)
 
-        for layer in self.layers:
+        # Apply encoder layers similar to the Transformer's encoder.
+        for layer in self.layers: 
+            # (Batch_Size, Seq_Len, Dim) -> (Batch_Size, Seq_Len, Dim)
             state = layer(state)
-
-        # (Batch_Size, seq_len, Dim) => (Batch_Size, seq_len, Dim)
-        state = self.layerNorm(state)
-
-        return state
+        # (Batch_Size, Seq_Len, Dim) -> (Batch_Size, Seq_Len, Dim)
+        output = self.layernorm(state)
+        
+        return output
     
 
 
